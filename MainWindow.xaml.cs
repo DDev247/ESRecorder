@@ -47,7 +47,7 @@ namespace ESRecorder
         [return: MarshalAs(UnmanagedType.Bool)]
         public static partial bool PathFindOnPathW([In, Out] char[] pszFile, IntPtr ppszOtherDirs);
 
-        public const string VERSION = "0.1.0";
+        public const string VERSION = "0.1.1";
 
         public MainWindow()
         {
@@ -252,16 +252,22 @@ namespace ESRecorder
 
             StreamWriter file = new(File.OpenWrite("./exports/" + Blendify(e.Name) + ".jbeam"));
             file.WriteLine("\"torque\": [");
-            file.WriteLine("    [\"rpm\", \"torque\"]");
+            file.WriteLine("    [\"rpm\", \"torque\"],");
             foreach (var rpm in torque.Keys)
             {
-                file.WriteLine($"    [{rpm}, {torque[rpm]}],");
+                file.WriteLine($"    [{rpm}, {torque[rpm].ToString(NUM_INFO)}],");
             }
             file.WriteLine("],");
-            file.WriteLine($"\"idleRPM\": {idleRpm.ToString(NUM_INFO)}");
-            file.WriteLine($"\"maxRPM\": {maxRpm.ToString(NUM_INFO)}");
-            file.WriteLine($"\"friction\": {staticFriction.ToString(NUM_INFO)}");
-            file.WriteLine($"\"dynamicFriction\": {dynamicFriction.ToString(NUM_INFO)}");
+            file.WriteLine($"\"idleRPM\": {idleRpm.ToString(NUM_INFO)},");
+            file.WriteLine($"\"maxRPM\": {maxRpm.ToString(NUM_INFO)},");
+            file.WriteLine($"\"friction\": {staticFriction.ToString(NUM_INFO)},");
+            file.WriteLine($"\"dynamicFriction\": {dynamicFriction.ToString(NUM_INFO)},");
+            file.WriteLine("");
+            file.WriteLine("");
+            file.WriteLine($"\"starterSample\": \"event:>Engine>Starter>{soundEventName}_eng\",");
+            file.WriteLine($"\"starterSampleExhaust\": \"event:>Engine>Starter>{soundEventName}_exh\",");
+            file.WriteLine($"\"shutOffSampleEngine\": \"event:>Engine>Shutoff>{soundEventName}_eng\",");
+            file.WriteLine($"\"shutOffSampleExhaust\": \"event:>Engine>Shutoff>{soundEventName}_exh\",");
             file.Flush();
             file.Close();
 

@@ -14,10 +14,6 @@
 	<Sound PrettyName="Inline 6 2007" EventName="i6_2007"/>
 	<Sound PrettyName="Inline 6 2011" EventName="i6_2011"/>
 	
-	<!-- Edge case: these only have eng samples -->
-	<Sound PrettyName="Inline 6 Bus Diesel" EventName="i6diesel_bus_eng"/>
-	<Sound PrettyName="Inline 6 Bus Diesel" EventName="i6diesel_semi_eng"/>
-
 	<Sound PrettyName="V6 1985" EventName="v6_1985"/>
 	<Sound PrettyName="V6 1995" EventName="v6_1995"/>
 	<Sound PrettyName="V6 Diesel 2011" EventName="v6diesel_2011"/>

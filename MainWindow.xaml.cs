@@ -284,12 +284,17 @@ namespace ESRecorder
             int j = 0;
             if (!Directory.Exists("./exports/" + Blendify(e.Name)))
                 Directory.CreateDirectory("./exports/" + Blendify(e.Name));
+            else
+            {
+                foreach(var f in Directory.EnumerateFiles("./exports/" + Blendify(e.Name)))
+                    File.Delete(f);
+            }
 
             foreach (var rpm in e.Dyno0.Keys)
             {
                 string comma = (j < e.Dyno0.Keys.Count - 1) ? "," : "";
                 File.Copy("./engines/" + e.Name + "/" + e.Name + "_" + rpm + "_0.wav", "./exports/" + Blendify(e.Name) + "/" + Blendify(e.Name) + "_" + rpm + "_0.wav");
-                file.WriteLine($"            [art/sound/engine/{Blendify(e.Name)}/{Blendify(e.Name)}_{rpm}_0.wav, {rpm}]{comma}");
+                file.WriteLine($"            [\"art/sound/engine/{Blendify(e.Name)}/{Blendify(e.Name)}_{rpm}_0.wav\", {rpm}]{comma}");
                 j++;
             }
             file.WriteLine("        ],");
@@ -299,7 +304,7 @@ namespace ESRecorder
             {
                 string comma = (j < e.Dyno100.Keys.Count - 1) ? "," : "";
                 File.Copy("./engines/" + e.Name + "/" + e.Name + "_" + rpm + "_100.wav", "./exports/" + Blendify(e.Name) + "/" + Blendify(e.Name) + "_" + rpm + "_100.wav");
-                file.WriteLine($"            [art/sound/engine/{Blendify(e.Name)}/{Blendify(e.Name)}_{rpm}_100.wav, {rpm}]{comma}");
+                file.WriteLine($"            [\"art/sound/engine/{Blendify(e.Name)}/{Blendify(e.Name)}_{rpm}_100.wav\", {rpm}]{comma}");
                 j++;
             }
             file.WriteLine("        ]");

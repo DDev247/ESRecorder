@@ -282,10 +282,14 @@ namespace ESRecorder
             file.WriteLine("    \"samples\": [");
             file.WriteLine("        [");
             int j = 0;
+            if (!Directory.Exists("./exports/" + Blendify(e.Name)))
+                Directory.CreateDirectory("./exports/" + Blendify(e.Name));
+
             foreach (var rpm in e.Dyno0.Keys)
             {
                 string comma = (j < e.Dyno0.Keys.Count - 1) ? "," : "";
-                file.WriteLine($"            [art/sound/engine/{Blendify(e.Name)}/{e.Name}_{rpm}_0.wav, {rpm}]{comma}");
+                File.Copy("./engines/" + e.Name + "/" + e.Name + "_" + rpm + "_0.wav", "./exports/" + Blendify(e.Name) + "/" + Blendify(e.Name) + "_" + rpm + "_0.wav");
+                file.WriteLine($"            [art/sound/engine/{Blendify(e.Name)}/{Blendify(e.Name)}_{rpm}_0.wav, {rpm}]{comma}");
                 j++;
             }
             file.WriteLine("        ],");
@@ -294,7 +298,8 @@ namespace ESRecorder
             foreach (var rpm in e.Dyno100.Keys)
             {
                 string comma = (j < e.Dyno100.Keys.Count - 1) ? "," : "";
-                file.WriteLine($"            [art/sound/engine/{Blendify(e.Name)}/{e.Name}_{rpm}_100.wav, {rpm}]{comma}");
+                File.Copy("./engines/" + e.Name + "/" + e.Name + "_" + rpm + "_100.wav", "./exports/" + Blendify(e.Name) + "/" + Blendify(e.Name) + "_" + rpm + "_100.wav");
+                file.WriteLine($"            [art/sound/engine/{Blendify(e.Name)}/{Blendify(e.Name)}_{rpm}_100.wav, {rpm}]{comma}");
                 j++;
             }
             file.WriteLine("        ]");
@@ -303,7 +308,7 @@ namespace ESRecorder
             file.Flush();
             file.Close();
 
-            MessageBox.Show($"Put your samples from \"engines/{e.Name}/\" into \"/art/sound/engine/{Blendify(e.Name)}\" for it to work properly.", "Information", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show($"Put your samples from \"exports/{Blendify(e.Name)}/\" into \"/art/sound/engine/{Blendify(e.Name)}\" for it to work properly.", "Information", MessageBoxButton.OK, MessageBoxImage.Information);
 
             Load_Recorded_Engines();
         }

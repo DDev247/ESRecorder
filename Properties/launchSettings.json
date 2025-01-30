@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "ESRecorder": {
+      "commandName": "Project",
+      "nativeDebugging": false
+    }
+  }
+}

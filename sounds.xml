@@ -1,0 +1,28 @@
+﻿<?xml version="1.0" encoding="utf-8" ?> 
+<SoundInfo>
+	<Sound PrettyName="Boxer 4 1960" EventName="box4_1960"/>
+	<Sound PrettyName="Boxer 4 2006" EventName="box4_2006"/>
+	
+	<Sound PrettyName="Inline 4 1990" EventName="i4_1990"/>
+	<Sound PrettyName="Inline 4 1996" EventName="i4_1996"/>
+	<Sound PrettyName="Inline 4 2001" EventName="i4_2001"/>
+	<Sound PrettyName="Inline 4 2007" EventName="i4_2007"/>
+	<Sound PrettyName="Inline 4 2009" EventName="i4_2009"/>
+	<Sound PrettyName="Inline 4 2011" EventName="i4_2011"/>
+	<Sound PrettyName="Inline 4 Diesel 1990" EventName="i4diesel_1990"/>
+
+	<Sound PrettyName="Inline 6 2007" EventName="i6_2007"/>
+	<Sound PrettyName="Inline 6 2011" EventName="i6_2011"/>
+	
+	<!-- Edge case: these only have eng samples -->
+	<Sound PrettyName="Inline 6 Bus Diesel" EventName="i6diesel_bus_eng"/>
+	<Sound PrettyName="Inline 6 Bus Diesel" EventName="i6diesel_semi_eng"/>
+
+	<Sound PrettyName="V6 1985" EventName="v6_1985"/>
+	<Sound PrettyName="V6 1995" EventName="v6_1995"/>
+	<Sound PrettyName="V6 Diesel 2011" EventName="v6diesel_2011"/>
+
+	<Sound PrettyName="V8 Flat 1986" EventName="v8flat_1986"/>
+	<Sound PrettyName="V8 19xy" EventName="v8_19xy"/>
+	<Sound PrettyName="V8 20xy" EventName="v8_20xy"/>
+</SoundInfo>

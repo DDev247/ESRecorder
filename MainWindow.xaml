@@ -164,12 +164,53 @@
                                     <Grid>
                                         <Grid.RowDefinitions>
                                             <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
                                             <RowDefinition Height="1*"/>
                                         </Grid.RowDefinitions>
                                         <Border Grid.Row="0" BorderBrush="White" BorderThickness="0,0,0,1">
-                                            <TextBlock Name="LogStatus" FontSize="18" Padding="2,1">Idle</TextBlock>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="1*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Name="LogStatus0" FontSize="18" Padding="2,1">Idle</TextBlock>
+                                                <TextBlock Grid.Column="1" FontSize="10" Padding="2,1" VerticalAlignment="Center" Foreground="#aaa">Thread 1</TextBlock>
+                                            </Grid>
                                         </Border>
-                                        <ScrollViewer Grid.Row="1" Name="LogScrollViewer" VerticalScrollBarVisibility="Auto" CanContentScroll="True">
+                                        <Border Grid.Row="1" BorderBrush="White" BorderThickness="0,0,0,1">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="1*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Name="LogStatus1" FontSize="18" Padding="2,1">Idle</TextBlock>
+                                                <TextBlock Grid.Column="1" FontSize="10" Padding="2,1" VerticalAlignment="Center" Foreground="#aaa">Thread 2</TextBlock>
+                                            </Grid>
+                                        </Border>
+                                        <Border Grid.Row="2" BorderBrush="White" BorderThickness="0,0,0,1">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="1*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Name="LogStatus2" FontSize="18" Padding="2,1">Idle</TextBlock>
+                                                <TextBlock Grid.Column="1" FontSize="10" Padding="2,1" VerticalAlignment="Center" Foreground="#aaa">Thread 3</TextBlock>
+                                            </Grid>
+                                        </Border>
+                                        <Border Grid.Row="3" BorderBrush="White" BorderThickness="0,0,0,1">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="1*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Name="LogStatus3" FontSize="18" Padding="2,1">Idle</TextBlock>
+                                                <TextBlock Grid.Column="1" FontSize="10" Padding="2,1" VerticalAlignment="Center" Foreground="#aaa">Thread 4</TextBlock>
+                                            </Grid>
+                                        </Border>
+                                        
+                                        <ScrollViewer Grid.Row="4" Name="LogScrollViewer" VerticalScrollBarVisibility="Auto" CanContentScroll="True">
                                             <ScrollViewer.Resources>
                                                 <sys:Double x:Key="{x:Static SystemParameters.VerticalScrollBarWidthKey}">15</sys:Double>
                                             </ScrollViewer.Resources>
@@ -234,7 +275,7 @@
                                     <TextBox Grid.Column="1" Name="WarmupCount" Text="100" BorderThickness="0" VerticalContentAlignment="Center" HorizontalContentAlignment="Center"/>
                                 </Grid>
                             </Grid>
-                            <Button Grid.Column="3" Name="StartRecordingButton" Content="Start rendering" Background="Transparent" Foreground="White" BorderBrush="White" BorderThickness="1,0,0,0" Click="Start_Rendering_Click"/>
+                            <Button Grid.Column="3" Name="StartRecordingButton" Content="Start recording" Background="Transparent" Foreground="White" BorderBrush="White" BorderThickness="1,0,0,0" Click="Start_Rendering_Click"/>
                         </Grid>
                     </Border>
                 </Grid>

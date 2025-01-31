@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using ScottPlot.Plottables;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -19,6 +20,24 @@ using System.Xml;
 
 namespace ESRecorder
 {
+    enum Status
+    {
+        GimmeAMinute,
+        OK,
+        Error,
+        Recording,
+        Warmup
+    }
+
+    enum Demand
+    {
+        Exit,
+        None,
+        Load,
+        Record,
+        FillData,
+    }
+
     /// <summary>
     /// Interaction logic for MainWindow.xaml
     /// </summary>
@@ -28,15 +47,23 @@ namespace ESRecorder
         public List<SampleThrottle> SampleThrottleList = new();
 
         public string EngineName = "";
+        public float EngineRedline = 0.0f;
+        public float EngineDisplacement = 0.0f;
 
         public bool finishedLoading = false;
-        private ESRecordState lastState = ESRecordState.Idle;
         public bool Running = true;
 
         private bool recording = false;
 
+        private ESRecordState[] instanceState = { ESRecordState.Idle, ESRecordState.Idle, ESRecordState.Idle, ESRecordState.Idle };
+        private Status[] instanceStatus = { Status.OK, Status.OK, Status.OK, Status.OK };
+
+        private object[] instanceData = new object[4];
+        private Demand[] instanceDemands = { Demand.None, Demand.None, Demand.None, Demand.None };
+        private Thread[] instanceThreads;
+
         // Throttle -> RPM -> Power + Torque
-        public Dictionary<int, Dictionary<int, KeyValuePair<float, float>>> Dyno = new();
+        public SortedDictionary<int, SortedDictionary<int, KeyValuePair<float, float>>> Dyno = new();
 
         public static System.Globalization.NumberFormatInfo NUM_INFO = System.Globalization.NumberFormatInfo.InvariantInfo;
 
@@ -61,7 +88,7 @@ namespace ESRecorder
             if (!Directory.Exists("./exports"))
                 Directory.CreateDirectory("./exports");
 
-            if(!Directory.Exists("./es") || !File.Exists("./es/esrecord-lib.dll"))
+            if (!Directory.Exists("./es") || !File.Exists("./es/esrecord-lib.dll"))
             {
                 MessageBox.Show("ES not found. Something is wrong with your installation.", "Oops?", MessageBoxButton.OK, MessageBoxImage.Error);
 
@@ -74,6 +101,13 @@ namespace ESRecorder
             Generate_SampleRPMGrid();
             Generate_SampleThrottleGrid();
 
+            instanceThreads = new Thread[4];
+            for (int i = 0; i < 4; i++)
+            {
+                instanceThreads[i] = new(Instance_Thread);
+                instanceThreads[i].Start(i);
+            }
+
             Start_Checking();
             Load_Engine();
 
@@ -81,7 +115,9 @@ namespace ESRecorder
 
             TitlebarNameVersion.Content = "ESRecorder " + VERSION;
             TitlebarNameVersion.ToolTip = "DLL: " + ESRecord.ESRecord_GetVersion();
+#if !DEBUG
             Check_Updates();
+#endif
 
             Load_Recorded_Engines();
             Convert_Log.Text = "Idle...";
@@ -102,7 +138,7 @@ namespace ESRecorder
                 for (int _ = 0; _ < 5; _++)
                 {
                     HttpResponseMessage message = await c.GetAsync("https://raw.githubusercontent.com/DDev247/ESRecorder/refs/heads/main/version");
-                    if(!message.IsSuccessStatusCode)
+                    if (!message.IsSuccessStatusCode)
                     {
                         MessageBoxResult res = MessageBox.Show($"Failed to check for new version. Press yes to try again.", "Warning", MessageBoxButton.YesNo, MessageBoxImage.Warning);
                         if (res != MessageBoxResult.Yes)
@@ -110,10 +146,10 @@ namespace ESRecorder
                     }
 
                     string s = await message.Content.ReadAsStringAsync();
-                    if(s != VERSION)
+                    if (s != VERSION)
                     {
                         MessageBoxResult res = MessageBox.Show($"There's a new version available: \"{s}\". Press yes to go to the latest release page.", "New version available", MessageBoxButton.YesNo, MessageBoxImage.Information);
-                        if(res == MessageBoxResult.Yes)
+                        if (res == MessageBoxResult.Yes)
                             Process.Start("start", "https://github.com/DDev247/ESRecorder/releases/latest");
                         break;
                     }
@@ -145,7 +181,8 @@ namespace ESRecorder
 
         private void Convert_Recorded_Engine()
         {
-            if (RecordedEngines.Count == 0 || Convert_RecordedEngineSelection.SelectedIndex == -1) {
+            if (RecordedEngines.Count == 0 || Convert_RecordedEngineSelection.SelectedIndex == -1)
+            {
                 MessageBox.Show("No recorded engines, or something went wrong.");
                 return;
             }
@@ -211,7 +248,7 @@ namespace ESRecorder
 
             // interpolate top
             delta = maxRpm - e._MaxRPM; // ex. 7500 - 7200 = 300; 8000 - 7200 = 800; 8000 - 9000 = -1000
-            
+
             // at least 500 rpm breathing room
             if (delta >= -500)
             {
@@ -286,7 +323,7 @@ namespace ESRecorder
                 Directory.CreateDirectory("./exports/" + Blendify(e.Name));
             else
             {
-                foreach(var f in Directory.EnumerateFiles("./exports/" + Blendify(e.Name)))
+                foreach (var f in Directory.EnumerateFiles("./exports/" + Blendify(e.Name)))
                     File.Delete(f);
             }
 
@@ -327,8 +364,8 @@ namespace ESRecorder
             foreach (var file in files)
             {
                 string name = System.IO.Path.GetFileNameWithoutExtension(file);
-                
-                if(File.Exists("./engines/" + name + ".csv"))
+
+                if (File.Exists("./engines/" + name + ".csv"))
                 {
                     BinaryReader br = new(File.OpenRead(file));
                     string s = new(br.ReadChars(6)); // header of some sorts
@@ -342,7 +379,7 @@ namespace ESRecorder
                     RecordedEngine e = RecordedEngine.Load(name);
                     e.Displacement = br.ReadSingle();
                     e.Redline = br.ReadInt32();
-                    
+
                     // engine doesnt have both 0 and 100 throttle curves
                     if (e.Name != "-")
                     {
@@ -389,7 +426,7 @@ namespace ESRecorder
 
             foreach (var item in e.Dyno100)
             {
-                if(item.Key < rpm_min) rpm_min = item.Key;
+                if (item.Key < rpm_min) rpm_min = item.Key;
                 if (item.Key > rpm_max) rpm_max = item.Key;
 
                 rpm_axisX.Add(item.Key);
@@ -406,7 +443,7 @@ namespace ESRecorder
 
             var crosshairMin = Convert_Plot.Plot.Add.Crosshair(int.Parse(Convert_IdleRPM.Text), 0);
             var crosshairMax = Convert_Plot.Plot.Add.Crosshair(int.Parse(Convert_MaximumRPM.Text), 0);
-            
+
             crosshairMin.HorizontalLine.IsVisible = false;
             crosshairMax.HorizontalLine.IsVisible = false;
 
@@ -424,7 +461,7 @@ namespace ESRecorder
             Convert_Plot.Plot.FigureBackground.Color = new("#0E1012");
             Convert_Plot.Plot.Axes.Color(new("#ffffff"));
             Convert_Plot.Plot.Axes.AntiAlias(true);
-            
+
             Convert_Plot.Plot.Legend.BackgroundColor = ScottPlot.Color.FromARGB(0);
             Convert_Plot.Plot.Legend.FontColor = new("#ffffff");
             Convert_Plot.Plot.Legend.OutlineColor = ScottPlot.Color.FromARGB(0);
@@ -450,12 +487,12 @@ namespace ESRecorder
                 string prettyname = sound.Attributes["PrettyName"].Value;
 
                 ComboBoxItem item = new ComboBoxItem();
-                item.Content = prettyname; 
+                item.Content = prettyname;
 
                 Convert_StarterSoundSelection.Items.Add(item);
                 Sounds.Add(new KeyValuePair<string, string>(eventname, prettyname));
             }
-            
+
             Convert_StarterSoundSelection.SelectedIndex = 0;
         }
 
@@ -477,7 +514,7 @@ namespace ESRecorder
             DynoPlot.Plot.Clear();
             float powerMax = float.MinValue, powerRpm = 0;
             float torqueMax = float.MinValue, torqueRpm = 0;
-            
+
             foreach (var key in Dyno.Keys)
             {
                 List<float> rpm_axisX = new();
@@ -510,6 +547,10 @@ namespace ESRecorder
                 scatterTorque.LegendText = "Torque: " + key + "%";
             }
 
+            var cross = DynoPlot.Plot.Add.Crosshair(0, 0);
+            cross.LineColor = new ScottPlot.Color("#ffffff");
+            cross.VerticalLine.IsVisible = false;
+
             DynoPlot.Plot.Axes.AutoScale();
             DynoPlot.Refresh();
         }
@@ -530,6 +571,87 @@ namespace ESRecorder
 
         #endregion
 
+        private int Get_Free_Instance()
+        {
+            List<int> free = new();
+            for (int i = 0; i < 4; i++)
+            {
+                if (instanceStatus[i] == Status.OK)
+                {
+                    free.Add(i);
+                }
+            }
+
+            if (free.Count > 0)
+                return free.Last();
+            else
+                return -1;
+        }
+
+        private void Instance_Thread(object? param)
+        {
+            if (param == null || param.GetType() != typeof(int)) throw new Exception("parameter is not an integer.");
+            int instanceId = (int)param;
+            instanceStatus[instanceId] = Status.GimmeAMinute;
+
+        check_demands:
+            if (instanceDemands[instanceId] == Demand.Load)
+            {
+                instanceStatus[instanceId] = Status.GimmeAMinute;
+                bool result = ESRecord.ESRecord_Compile(instanceId, "./es/assets/main.mr");
+                
+                if (!result)
+                    instanceStatus[instanceId] = Status.Error;
+                else
+                    instanceStatus[instanceId] = Status.OK;
+
+                instanceDemands[instanceId] = Demand.None;
+            }
+            else if (instanceDemands[instanceId] == Demand.Record)
+            {
+                instanceStatus[instanceId] = Status.GimmeAMinute;
+
+                runningRecordingWorkers++;
+
+                SampleConfig sample = (SampleConfig)instanceData[instanceId];
+                SampleResult result = ESRecord.ESRecord_Record(instanceId, sample);
+                Dyno[sample.throttle].Add(sample.rpm, new KeyValuePair<float, float>(result.power, result.torque));
+                instanceData[instanceId] = result;
+
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    Refresh_Dyno();
+                });
+                
+                runningRecordingWorkers--;
+
+                instanceStatus[instanceId] = Status.OK;
+                instanceDemands[instanceId] = Demand.None;
+            }
+            else if (instanceDemands[instanceId] == Demand.FillData)
+            {
+                instanceStatus[instanceId] = Status.GimmeAMinute;
+
+                EngineName = ESRecord.ESRecord_Engine_GetName(instanceId);
+                EngineRedline = ESRecord.ESRecord_Engine_GetRedline(instanceId);
+                EngineDisplacement = ESRecord.ESRecord_Engine_GetDisplacement(instanceId);
+
+                instanceStatus[instanceId] = Status.OK;
+                instanceDemands[instanceId] = Demand.None;
+            }
+            else if (instanceDemands[instanceId] == Demand.Exit) return;
+
+        //loop:
+            while (instanceDemands[instanceId] == Demand.None)
+            {
+                Thread.Sleep(10);
+            }
+
+            if (Running) goto check_demands;
+
+            Debug.WriteLine($"{instanceId} Exited!");
+        }
+
         private void Load_Engine()
         {
             // Load engine
@@ -540,38 +662,50 @@ namespace ESRecorder
             this.LogTextBlock.Text = "";
             AddLog("Loading Engine...");
 
-            Thread t = new Thread(() =>
+            Thread t = new(() =>
             {
-                bool result = ESRecord.ESRecord_Compile("./es/assets/main.mr");
-                if (!result)
+                for (int i = 0; i < 4; i++)
+                    instanceDemands[i] = Demand.Load; // slavery :sob:
+
+                Thread.Sleep(100);
+
+                for (int i = 0; i < 4; i++)
                 {
-                    string errorLog = File.ReadAllText("error_log.log");
-                    Application.Current.Dispatcher.Invoke(() =>
+                    while (instanceStatus[i] == Status.GimmeAMinute)
+                        Thread.Sleep(100);
+
+                    if (instanceStatus[i] == Status.Error)
                     {
-                        AddLog(" ERROR");
-                        this.InfoEngineStats.Text = "Failed to load:\n" + errorLog;
-                        this.InfoEngineName.Text = "Failed to load";
-                        this.TitlebarContext.Content = "Failed to load engine";
-                    });
+                        string errorLog = File.ReadAllText("error_log.log");
+                        Application.Current.Dispatcher.Invoke(() =>
+                        {
+                            AddLog(" ERROR");
+                            this.InfoEngineStats.Text = "Failed to load:\n" + errorLog;
+                            this.InfoEngineName.Text = "Failed to load";
+                            this.TitlebarContext.Content = "Failed to load engine";
+                        });
 
-                    MessageBox.Show("Failed to load engine.\nError log:\n" + errorLog, "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        MessageBox.Show("Failed to load engine.\nError log:\n" + errorLog, "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
 
-                    return;
+                        return;
+                    }
                 }
 
-                EngineName = ESRecord.ESRecord_Engine_GetName();
+                instanceDemands[0] = Demand.FillData;
+                Thread.Sleep(100);
+                while (instanceStatus[0] == Status.GimmeAMinute)
+                {
+                    Thread.Sleep(100);
+                }
 
-                float redline = ESRecord.ESRecord_Engine_GetRedline();
-                float displacement = ESRecord.ESRecord_Engine_GetDisplacement();
-                displacement = (float) Math.Round(displacement, 1);
-
+                // ok?
                 Application.Current.Dispatcher.Invoke(() =>
                 {
-                    this.InfoEngineStats.Text = "Redline: " + redline.ToString(provider: NUM_INFO) + " RPM";
-                    this.InfoEngineStats.Text += "\nDisplacement: " + displacement.ToString(provider: NUM_INFO) + "L";
+                    this.InfoEngineStats.Text = "Redline: " + EngineRedline.ToString(provider: NUM_INFO) + " RPM";
+                    this.InfoEngineStats.Text += "\nDisplacement: " + Math.Round(EngineDisplacement, 1).ToString(provider: NUM_INFO) + "L";
 
                     this.InfoEngineName.Text = EngineName;
-                    this.InfoEngineDisplacement.Text = displacement.ToString(provider: NUM_INFO) + "L";
+                    this.InfoEngineDisplacement.Text = Math.Round(EngineDisplacement, 1).ToString(provider: NUM_INFO) + "L";
                     this.TitlebarContext.Content = "Loaded: " + EngineName;
                     AddLog(" OK");
                 });
@@ -590,6 +724,8 @@ namespace ESRecorder
             return new string(Sanitize_Path(path).Where(c => char.IsLetterOrDigit(c) || char.IsWhiteSpace(c) || c == '-').ToArray()).Replace(' ', '_');
         }
 
+        private int runningRecordingWorkers = 0;
+
         private void Start_Recording()
         {
             // Start recording
@@ -604,7 +740,7 @@ namespace ESRecorder
 
             int sampleLength = -1;
             bool success = int.TryParse(SampleLength.Text, out sampleLength);
-            if(!success)
+            if (!success)
             {
                 MessageBox.Show("Failed to parse \"" + SampleLength.Text + "\" as integer", "Error");
                 return;
@@ -617,59 +753,176 @@ namespace ESRecorder
                 return;
             }
 
-
             // clear dyno
             Dyno.Clear();
             foreach (var sample in SampleThrottleList)
-                Dyno.Add(sample.Throttle, new Dictionary<int, KeyValuePair<float, float>>());
+                Dyno.Add(sample.Throttle, new SortedDictionary<int, KeyValuePair<float, float>>());
 
             Refresh_Dyno();
 
-            Thread t = new Thread(() =>
+            Thread t = new(() =>
             {
                 Stopwatch sw = new();
                 sw.Start();
+
+                List<SampleConfig> i0 = new();
+                List<SampleConfig> i1 = new();
+                List<SampleConfig> i2 = new();
+                List<SampleConfig> i3 = new();
+
+                int k = 0;
+                for (int i = 0; i < SampleRPMList.Count; i++)
+                {
+                    for (int j = 0; j < SampleThrottleList.Count; j++)
+                    {
+                        SampleConfig sample = new SampleConfig
+                        {
+                            prerunCount = prerun,
+                            rpm = SampleRPMList[i].RPM,
+                            throttle = SampleThrottleList[j].Throttle,
+                            frequency = SampleRPMList[i].Frequency,
+                            length = sampleLength,
+                            overrideRevlimit = true
+                        };
+                        sample.output = "./engines/" + sanitizedName + "/" + sanitizedName + "_" + SampleRPMList[i].RPM.ToString(provider: NUM_INFO) + "_" + SampleThrottleList[j].Throttle.ToString(provider: NUM_INFO) + ".wav";
+
+                        switch(k%4)
+                        {
+                            case 0: i0.Add(sample); break;
+                            case 1: i1.Add(sample); break;
+                            case 2: i2.Add(sample); break;
+                            case 3: i3.Add(sample); break;
+                        }
+
+                        k++;
+                    }
+                }
+
+                Thread t0 = new(() =>
+                {
+                    int i0index = 0;
+
+                set_data:
+                    if (!recording) return;
+                    
+                    instanceData[0] = i0[i0index];
+                    AddLog($"\n0 recording {i0[i0index].rpm}/{i0[i0index].throttle}.");
+                    i0index++;
+                    instanceDemands[0] = Demand.Record;
+
+                    while (instanceStatus[0] != Status.GimmeAMinute)
+                        Thread.Sleep(100);
+                    while (instanceStatus[0] == Status.GimmeAMinute)
+                        Thread.Sleep(100);
+                    
+                    if(i0index < i0.Count) goto set_data;
+                    AddLog("\n0 finished.");
+                });
+
+                Thread t1 = new(() =>
+                {
+                    int i1index = 0;
+
+                set_data:
+                    if (!recording) return;
+                    
+                    instanceData[1] = i1[i1index];
+                    AddLog($"\n1 recording {i1[i1index].rpm}/{i1[i1index].throttle}.");
+                    i1index++;
+                    instanceDemands[1] = Demand.Record;
+
+                    while (instanceStatus[1] != Status.GimmeAMinute)
+                        Thread.Sleep(100);
+                    while (instanceStatus[1] == Status.GimmeAMinute)
+                        Thread.Sleep(100);
+
+                    if (i1index < i1.Count) goto set_data;
+                    AddLog("\n1 finished.");
+                });
+
+                Thread t2 = new(() =>
+                {
+                    int i2index = 0;
+
+                set_data:
+                    if (!recording) return;
+                    
+                    instanceData[2] = i2[i2index];
+                    AddLog($"\n2 recording {i2[i2index].rpm}/{i2[i2index].throttle}.");
+                    i2index++;
+                    instanceDemands[2] = Demand.Record;
+
+                    while (instanceStatus[2] != Status.GimmeAMinute)
+                        Thread.Sleep(100);
+                    while (instanceStatus[2] == Status.GimmeAMinute)
+                        Thread.Sleep(100);
+
+                    if (i2index < i2.Count) goto set_data;
+                    AddLog("\n2 finished.");
+                });
+
+                Thread t3 = new(() =>
+                {
+                    int i3index = 0;
+
+                set_data:
+                    if (!recording) return;
+
+                    instanceData[3] = i3[i3index];
+                    AddLog($"\n3 recording {i3[i3index].rpm}/{i3[i3index].throttle}.");
+                    i3index++;
+                    instanceDemands[3] = Demand.Record;
+
+                    while (instanceStatus[3] != Status.GimmeAMinute)
+                        Thread.Sleep(100);
+                    while (instanceStatus[3] == Status.GimmeAMinute)
+                        Thread.Sleep(100);
+
+                    if (i3index < i3.Count) goto set_data;
+                    AddLog("\n3 finished.");
+                });
+
+                t0.Start();
+                t1.Start();
+                t2.Start();
+                t3.Start();
+
+                t0.Join();
+                t1.Join();
+                t2.Join();
+                t3.Join();
+
+                if(!recording)
+                {
+                    recording = false;
+                    Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        AddLog("\nAborted.");
+                        StartRecordingButton.Content = "Start Recording";
+                        Load_Recorded_Engines();
+                        Refresh_Dyno();
+                    });
+                }
 
                 var f = File.CreateText("./engines/" + sanitizedName + ".csv");
                 f.WriteLine("rpm,throttle,power_hp,torque_nm");
 
                 for (int i = 0; i < SampleRPMList.Count; i++)
                 {
-                    if (!recording)
-                        break;
-
                     for (int j = 0; j < SampleThrottleList.Count; j++)
                     {
-                        if(!recording)
-                            break;
-
-                        SampleConfig sample = new SampleConfig
-                        {
-                            prerunCount = prerun, // TODO: Make this customisable
-                            rpm = SampleRPMList[i].RPM,
-                            throttle = SampleThrottleList[j].Throttle,
-                            frequency = SampleRPMList[i].Frequency,
-                            length = sampleLength, // TODO: Make this customisable
-                            overrideRevlimit = true
-                        };
-                        sample.output = "./engines/" + sanitizedName + "/" + sanitizedName + "_" + SampleRPMList[i].RPM.ToString(provider: NUM_INFO) + "_" + SampleThrottleList[j].Throttle.ToString(provider: NUM_INFO) + ".wav";
-
-                        AddLog("\nRecording rpm=" + sample.rpm.ToString(provider: NUM_INFO) + " throttle=" + sample.throttle.ToString(provider: NUM_INFO) + " frequency=" + sample.frequency.ToString(provider: NUM_INFO) + "...");
-
-                        SampleResult result = ESRecord.ESRecord_Record(sample);
+                        int rpm = SampleRPMList[i].RPM;
+                        int throttle = SampleThrottleList[j].Throttle;
                         
-                        AddLog(" OK (" + result.millis + "ms, " + Math.Round(result.ratio, 2) + "x)");
-
-                        // add to RAM dyno
-                        if (Dyno[sample.throttle].ContainsKey(sample.rpm))
-                            MessageBox.Show("You have duplicate RPM values.");
-                        else
+                        if (!Dyno[throttle].Keys.Contains(rpm))
                         {
-                            Dyno[sample.throttle].Add(sample.rpm, new KeyValuePair<float, float>(result.power, result.torque));
-                            Refresh_Dyno();
-
-                            f.WriteLine(sample.rpm.ToString(provider: NUM_INFO) + "," + sample.throttle.ToString(provider: NUM_INFO) + "," + Math.Round(result.power, 3).ToString(provider: NUM_INFO) + "," + Math.Round(result.torque, 3).ToString(provider: NUM_INFO));
+                            MessageBox.Show($"The program missed one sample. Sample: {rpm}/{throttle}");
+                            continue;
                         }
+                        
+                        float power = Dyno[throttle][rpm].Key;
+                        float torque = Dyno[throttle][rpm].Value;
+                        f.WriteLine(rpm.ToString(provider: NUM_INFO) + "," + throttle.ToString(provider: NUM_INFO) + "," + Math.Round(power, 3).ToString(provider: NUM_INFO) + "," + Math.Round(torque, 3).ToString(provider: NUM_INFO));
                     }
                 }
 
@@ -681,8 +934,8 @@ namespace ESRecorder
                 bw.Write(Encoding.ASCII.GetBytes("esreng")); // header
                 bw.Write((UInt16)SampleRPMList.Count);
                 bw.Write((UInt16)SampleThrottleList.Count);
-                bw.Write(ESRecord.ESRecord_Engine_GetDisplacement());
-                bw.Write(ESRecord.ESRecord_Engine_GetRedline());
+                bw.Write(ESRecord.ESRecord_Engine_GetDisplacement(0));
+                bw.Write(ESRecord.ESRecord_Engine_GetRedline(0));
                 bw.Write(EngineName);
 
                 foreach (var sample in SampleRPMList)
@@ -701,8 +954,10 @@ namespace ESRecorder
                     StartRecordingButton.Content = "Start Recording";
                     AddLog("\nFinished recording in " + sw.ElapsedMilliseconds + "ms");
                     Load_Recorded_Engines();
+                    Refresh_Dyno();
                 });
             });
+
             t.Start();
         }
 
@@ -714,7 +969,8 @@ namespace ESRecorder
             {
                 while (Running)
                 {
-                    Check_ESRecordLib();
+                    for (int i = 0; i < 4; i++)
+                        Check_ESRecordLib(i);
 
                     Thread.Sleep(100);
                 }
@@ -723,28 +979,39 @@ namespace ESRecorder
             t.Start();
         }
 
-        private void Check_ESRecordLib()
+        private void SetStatus(int instanceId, string status)
+        {
+            switch(instanceId)
+            {
+                case 0: this.LogStatus0.Text = status; break;
+                case 1: this.LogStatus1.Text = status; break;
+                case 2: this.LogStatus2.Text = status; break;
+                case 3: this.LogStatus3.Text = status; break;
+            }
+        }
+
+        private void Check_ESRecordLib(int instanceId)
         {
             int progress = -1;
-            ESRecordState state = ESRecord.ESRecord_GetState(out progress);
+            ESRecordState state = ESRecord.ESRecord_GetState(instanceId, out progress);
 
             Application.Current.Dispatcher.Invoke(() =>
             {
-                switch(state)
+                switch (state)
                 {
                     case ESRecordState.Idle:
                     case ESRecordState.Compiling:
                     case ESRecordState.Preparing:
-                        this.LogStatus.Text = state.ToString();
+                        SetStatus(instanceId, state.ToString());
                         break;
 
                     case ESRecordState.Warmup:
                     case ESRecordState.Recording:
-                        this.LogStatus.Text = state.ToString() + " (" + progress.ToString(provider: System.Globalization.NumberFormatInfo.InvariantInfo) + "%)";
+                        SetStatus(instanceId, state.ToString() + " (" + progress.ToString(provider: System.Globalization.NumberFormatInfo.InvariantInfo) + "%)");
                         break;
                 }
 
-                lastState = state;
+                instanceState[instanceId] = state;
             });
         }
 
@@ -786,7 +1053,7 @@ namespace ESRecorder
 
                 tb1.VerticalAlignment = VerticalAlignment.Center;
                 tb2.VerticalAlignment = VerticalAlignment.Center;
-             
+
                 tb1.HorizontalAlignment = HorizontalAlignment.Center;
                 tb2.HorizontalAlignment = HorizontalAlignment.Center;
             }
@@ -843,7 +1110,7 @@ namespace ESRecorder
                 {
                     int i = 0;
                     bool success = int.TryParse(tb2.Text, out i);
-                    if(!success)
+                    if (!success)
                     {
                         header2.Background = new SolidColorBrush(Color.FromRgb(0xEF, 0x45, 0x45));
                         tb2.Background = new SolidColorBrush(Color.FromRgb(0xEF, 0x45, 0x45));
@@ -874,7 +1141,7 @@ namespace ESRecorder
 
                 tb1.Foreground = new SolidColorBrush(Colors.White);
                 tb2.Foreground = new SolidColorBrush(Colors.White);
-                
+
                 tb1.CaretBrush = new SolidColorBrush(Colors.White);
                 tb2.CaretBrush = new SolidColorBrush(Colors.White);
 
@@ -897,7 +1164,7 @@ namespace ESRecorder
             // Clear grid
             SampleRPMGrid.RowDefinitions.Clear();
             SampleRPMGrid.Children.Clear();
-            
+
             // header
             Generate_RPM_Header();
 
@@ -1006,8 +1273,8 @@ namespace ESRecorder
                 return;
 
             BinaryReader br = new(File.OpenRead("data.dat"));
-            string s = new (br.ReadChars(4)); // header of some sorts
-            if(s != "esrd")
+            string s = new(br.ReadChars(4)); // header of some sorts
+            if (s != "esrd")
             {
                 MessageBox.Show("Invalid data file", "Error");
                 return;
@@ -1020,7 +1287,7 @@ namespace ESRecorder
 
             SampleRPMList.Clear();
             for (int i = 0; i < rpmscount; i++)
-                SampleRPMList.Add(new SampleRPM{ RPM = br.ReadInt32(), Frequency = br.ReadInt32() });
+                SampleRPMList.Add(new SampleRPM { RPM = br.ReadInt32(), Frequency = br.ReadInt32() });
 
             SampleThrottleList.Clear();
             for (int i = 0; i < throttlecount; i++)
@@ -1046,7 +1313,7 @@ namespace ESRecorder
             Convert_DynamicFriction.Text = br.ReadDouble().ToString(NUM_INFO);
             Convert_IdleRPM.Text = br.ReadInt32().ToString(NUM_INFO);
             Convert_MaximumRPM.Text = br.ReadInt32().ToString(NUM_INFO);
-            
+
             if (Convert_StarterSoundSelection != null)
                 Convert_StarterSoundSelection.SelectedIndex = br.ReadInt32();
             else
@@ -1134,6 +1401,11 @@ namespace ESRecorder
             Running = false;
             recording = false;
 
+            instanceDemands[0] = Demand.Exit;
+            instanceDemands[1] = Demand.Exit;
+            instanceDemands[2] = Demand.Exit;
+            instanceDemands[3] = Demand.Exit;
+
             Save_Data();
             Save_Data_Convert();
 
@@ -1153,7 +1425,7 @@ namespace ESRecorder
         private void Add_Throttle_Click(object sender, RoutedEventArgs e)
         {
             var item = new SampleThrottle();
-            if(SampleThrottleList.Count == 0)
+            if (SampleThrottleList.Count == 0)
             {
                 item.Throttle = 100;
             }
@@ -1193,7 +1465,7 @@ namespace ESRecorder
 
         private void Add_RPM_Click(object sender, RoutedEventArgs e)
         {
-            
+
             var item = new SampleRPM();
             if (SampleRPMList.Count == 0)
             {
@@ -1220,7 +1492,7 @@ namespace ESRecorder
 
         private void Start_Rendering_Click(object sender, RoutedEventArgs e)
         {
-            if(!recording)
+            if (!recording)
             {
                 recording = true;
                 Start_Recording();
@@ -1251,10 +1523,10 @@ namespace ESRecorder
 
             success = int.TryParse(Generate_RPMStep.Text, out step);
             if (!success) { MessageBox.Show("Failed to parse \"" + Generate_RPMStep.Text + "\" as integer", "Error"); return; }
-            
+
             success = int.TryParse(Generate_MaximumRPM.Text, out max);
             if (!success) { MessageBox.Show("Failed to parse \"" + Generate_MaximumRPM.Text + "\" as integer", "Error"); return; }
-            
+
             success = int.TryParse(Generate_Frequency.Text, out freq);
             if (!success) { MessageBox.Show("Failed to parse \"" + Generate_Frequency.Text + "\" as integer", "Error"); return; }
 
@@ -1284,7 +1556,7 @@ namespace ESRecorder
         private void Convert_StaticFriction_TextChanged(object sender, TextChangedEventArgs e)
         {
             float f = 0;
-            if(float.TryParse(Convert_StaticFriction.Text, NUM_INFO, out f))
+            if (float.TryParse(Convert_StaticFriction.Text, NUM_INFO, out f))
             {
                 Refresh_Convert_Dyno();
                 Save_Data_Convert();
@@ -1369,13 +1641,13 @@ namespace ESRecorder
         {
             Convert_Recorded_Engine();
         }
-        
+
         #endregion
     }
 
     public class SampleRPM
     {
-        public int RPM {  get; set; }
+        public int RPM { get; set; }
 
         public int Frequency { get; set; }
     }
@@ -1423,7 +1695,7 @@ namespace ESRecorder
                     has0 = true;
                     engine.Dyno0.Add(rpm, new KeyValuePair<float, float>(power, torque));
                 }
-                else if(throttle == 100)
+                else if (throttle == 100)
                 {
                     has100 = true;
 
@@ -1433,7 +1705,7 @@ namespace ESRecorder
                 }
             }
 
-            if(has0 && has100)
+            if (has0 && has100)
             {
                 engine.Name = name;
             }

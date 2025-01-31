@@ -753,7 +753,7 @@ namespace ESRecorder
             instanceData[parameter.instanceId] = parameter.configs[i];
             AddLog($"\n{parameter.instanceId} recording {parameter.configs[i].rpm}/{parameter.configs[i].throttle}.");
             i++;
-            instanceDemands[1] = Demand.Record;
+            instanceDemands[parameter.instanceId] = Demand.Record;
 
             while (instanceStatus[parameter.instanceId] != Status.GimmeAMinute)
                 Thread.Sleep(100);
@@ -849,7 +849,11 @@ namespace ESRecorder
                     threads[i].Start(param);
                 }
 
-                if(!recording)
+                // wait for threads to finish
+                for (int i = 0; i < MaxInstances; i++)
+                    threads[i].Join();
+
+                if (!recording)
                 {
                     Application.Current.Dispatcher.Invoke(() =>
                     {
@@ -983,10 +987,10 @@ namespace ESRecorder
                         break;
 
                     case ESRecordState.Warmup:
-                        SetStatus(instanceId, "R(" + progress.ToString(provider: System.Globalization.NumberFormatInfo.InvariantInfo) + "%)");
+                        SetStatus(instanceId, "W(" + progress.ToString(provider: System.Globalization.NumberFormatInfo.InvariantInfo) + "%)");
                         break;
                     case ESRecordState.Recording:
-                        SetStatus(instanceId, "W(" + progress.ToString(provider: System.Globalization.NumberFormatInfo.InvariantInfo) + "%)");
+                        SetStatus(instanceId, "R(" + progress.ToString(provider: System.Globalization.NumberFormatInfo.InvariantInfo) + "%)");
                         break;
                 }
 

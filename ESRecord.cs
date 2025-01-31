@@ -61,6 +61,9 @@ namespace ESRecorder
         public static extern double ESRecord_Update(int instanceId, float averagefps);
 
         [DllImport("es/esrecord-lib.dll")]
+        public static extern bool ESRecord_GetSimState(int instanceId);
+
+        [DllImport("es/esrecord-lib.dll")]
         public static extern ESRecordState ESRecord_GetState(int instanceId, out int progress);
 
         [DllImport("es/esrecord-lib.dll")]

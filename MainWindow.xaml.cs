@@ -1339,7 +1339,13 @@ namespace ESRecorder
             if (Convert_StaticFriction == null || Convert_DynamicFriction == null || Convert_IdleRPM == null || Convert_MaximumRPM == null || Convert_StarterSoundSelection == null)
                 return;
 
-            BinaryWriter bw = new(File.OpenWrite("persistence.esrf"));
+            BinaryWriter bw;
+
+            if(File.Exists("persistence.esrf"))
+                bw = new(File.Open("persistence.esrf", FileMode.Truncate, FileAccess.Write));
+            else
+                bw = new(File.Open("persistence.esrf", FileMode.CreateNew, FileAccess.Write));
+
             bw.Write(Encoding.ASCII.GetBytes("ESRF")); // esrecorder format
 
             // ESRP chunk

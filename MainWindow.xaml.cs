@@ -90,11 +90,32 @@ namespace ESRecorder
 
         public MainWindow()
         {
+            Logger.Initialise();
+            Logger.WriteLog("MainWindow", $"ES-Record {VERSION}");
+            Logger.WriteLog("MainWindow", $"Hooking exception handler...");
+
+            AppDomain.CurrentDomain.UnhandledException += UnhandledException;
+
             InitializeComponent();
+        }
+
+        private void UnhandledException(object sender, UnhandledExceptionEventArgs args)
+        {
+            Exception e = (Exception)args.ExceptionObject;
+            // lets just hope its not a logger exception ha... ha....... ha
+
+            Logger.WriteLog("UnhandledException", $"Unhandled exception: {e.GetType().FullName} -> \"{e.Message}\"");
+            Logger.WriteLog("UnhandledException", $"Stack trace: {e.StackTrace}");
+            if(args.IsTerminating)
+                Logger.WriteLog("UnhandledException", $"CLR is terminating!");
+
+            MessageBox.Show($"Unhandled Exception: {e.GetType().FullName} -> \"{e.Message}\"\nStack trace:\n{e.StackTrace}", "Unhandled Exception", MessageBoxButton.OK, MessageBoxImage.Error);
         }
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
+            Logger.WriteLog("Window_Loaded", $"Checking directories...");
+
             if (!Directory.Exists("./engines"))
                 Directory.CreateDirectory("./engines");
             if (!Directory.Exists("./exports"))
@@ -114,6 +135,7 @@ namespace ESRecorder
             Generate_SampleThrottleGrid();
 
             // initialise instances
+            Logger.WriteLog("Window_Loaded", $"Initialising instances...");
             instanceThreads = new Thread[INSTANCE_COUNT];
             instanceStatus = new Status[INSTANCE_COUNT];
             instanceState = new ESRecordState[INSTANCE_COUNT];
@@ -154,6 +176,8 @@ namespace ESRecorder
                 HttpClient c = new();
                 HttpResponseMessage message;
                 c.Timeout = TimeSpan.FromSeconds(10);
+                
+                Logger.WriteLog("Check_Updates", $"Checking for updates...");
 
                 // try five times
                 bool success = false;
@@ -181,6 +205,8 @@ namespace ESRecorder
                     string s = await message.Content.ReadAsStringAsync();
                     if (s != VERSION)
                     {
+                        Logger.WriteLog("Check_Updates", $"Local version: {VERSION}, Remote version: {s}, mismatch.");
+
                         MessageBoxResult res = MessageBox.Show($"There's a new version available: \"{s}\". Press yes to go to the latest release page.", "New version available", MessageBoxButton.YesNo, MessageBoxImage.Information);
                         if (res == MessageBoxResult.Yes)
                             Process.Start("start", "https://github.com/DDev247/ESRecorder/releases/latest");
@@ -188,16 +214,26 @@ namespace ESRecorder
                         TitlebarNameVersion.Foreground = new SolidColorBrush(Color.FromRgb(0xFD, 0xBD, 0x2E));
                         break;
                     }
-                    else // up to date?
+                    else
+                    {
+                        // up to date?
+                        Logger.WriteLog("Check_Updates", $"Local version: {VERSION}, Remote version: {s}, match OK");
                         break;
+                    }
                 }
 
                 if (!success)
                 {
                     if(ex != null)
+                    {
                         MessageBox.Show($"Failed to check for new version.\nException caught:\n{ex.Message}", "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        Logger.WriteLog("Check_Updates", $"Failed with exception: {ex.Message}");
+                    }
                     else
+                    {
+                        Logger.WriteLog("Check_Updates", $"Failed for some othe reason.");
                         MessageBox.Show($"Failed to check for new version.", "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
                 }
             });
             t.Start();
@@ -214,10 +250,12 @@ namespace ESRecorder
 
             if (result)
             {
-                Process.Start("code", fileName);
+                Logger.WriteLog("Open_In", $"Launching \"code.exe {fileName}\"");
+                Process.Start("code.exe", fileName);
             }
             else
             {
+                Logger.WriteLog("Open_In", $"Launching \"notepad.exe {fileName}\"");
                 Process.Start("notepad.exe", fileName);
             }
         }
@@ -235,6 +273,7 @@ namespace ESRecorder
 
             RecordedEngine e = RecordedEngines[Convert_RecordedEngineSelection.SelectedIndex];
 
+            Logger.WriteLog("Convert_Recorded_Engine", $"Converting engine \"{e.Name}\"");
             Convert_Log.Text = "Converting " + e.Name;
 
             int idleRpm = -1, maxRpm = -1;
@@ -329,6 +368,7 @@ namespace ESRecorder
             }
 
             // output to jbeam
+            Logger.WriteLog("Convert_Recorded_Engine", $"Writing jbeam \"./exports/{Blendify(e.Name)}.jbeam\"");
 
             StreamWriter file = new(File.OpenWrite("./exports/" + Blendify(e.Name) + ".jbeam"));
             file.WriteLine("\"torque\": [");
@@ -353,6 +393,7 @@ namespace ESRecorder
 
             // output to sfxBlend2D
 
+            Logger.WriteLog("Convert_Recorded_Engine", $"Writing sfxBlend2D \"./exports/{Blendify(e.Name)}.sfxBlend2D.json\"");
             file = new(File.OpenWrite("./exports/" + Blendify(e.Name) + ".sfxBlend2D.json"));
             file.WriteLine("{");
             file.WriteLine("    \"header\": {");
@@ -402,6 +443,8 @@ namespace ESRecorder
         {
             Convert_RecordedEngineSelection.Items.Clear();
             RecordedEngines.Clear();
+            
+            Logger.WriteLog("Load_Recorded_Engines", $"Loading engines...");
 
             string[] files = Directory.GetFiles("./engines/", "*.engine");
             foreach (var file in files)
@@ -444,6 +487,7 @@ namespace ESRecorder
                 Convert_RecordedEngineSelection.SelectedIndex = 0;
             }
 
+            Logger.WriteLog("Load_Recorded_Engines", $"Found {RecordedEngines.Count} engines");
             Start_Convert_Dyno();
         }
 
@@ -517,6 +561,8 @@ namespace ESRecorder
             Convert_StarterSoundSelection.Items.Clear();
             Sounds.Clear();
 
+            Logger.WriteLog("Load_Starter_Data", $"Loading starter sounds...");
+
             XmlDocument doc = new XmlDocument();
             doc.Load("./sounds.xml");
 
@@ -536,6 +582,7 @@ namespace ESRecorder
                 Sounds.Add(new KeyValuePair<string, string>(eventname, prettyname));
             }
 
+            Logger.WriteLog("Load_Starter_Data", $"Found {Sounds.Count} sounds");
             Convert_StarterSoundSelection.SelectedIndex = 0;
         }
 
@@ -636,13 +683,15 @@ namespace ESRecorder
             if (param == null || param.GetType() != typeof(int)) throw new Exception("parameter is not an integer.");
             int instanceId = (int)param;
             instanceStatus[instanceId] = Status.GimmeAMinute;
+            Logger.WriteLog($"Instance_Thread[{instanceId}]", $"Instance is starting...");
 
         check_demands:
             if (instanceDemands[instanceId] == Demand.Load)
             {
                 instanceStatus[instanceId] = Status.GimmeAMinute;
+                Logger.WriteLog($"Instance_Thread[{instanceId}]", $"Loading...");
                 bool result = ESRecord.ESRecord_Compile(instanceId, "./es/assets/main.mr");
-                
+
                 if (!result)
                     instanceStatus[instanceId] = Status.Error;
                 else
@@ -655,10 +704,13 @@ namespace ESRecorder
                 instanceStatus[instanceId] = Status.GimmeAMinute;
 
                 SampleConfig sample = (SampleConfig)instanceData[instanceId];
+                Logger.WriteLog($"Instance_Thread[{instanceId}]", $"Recording {sample.rpm}/{sample.throttle}...");
+
                 SampleResult result = ESRecord.ESRecord_Record(instanceId, sample);
                 Dyno[sample.throttle].Add(sample.rpm, new KeyValuePair<float, float>(result.power, result.torque));
                 instanceData[instanceId] = result;
 
+                Logger.WriteLog($"Instance_Thread[{instanceId}]", $"Recording done, took {result.millis}ms, {result.ratio}x realtime");
                 Application.Current.Dispatcher.Invoke(() =>
                 {
                     Refresh_Dyno();
@@ -670,6 +722,7 @@ namespace ESRecorder
             else if (instanceDemands[instanceId] == Demand.FillData)
             {
                 instanceStatus[instanceId] = Status.GimmeAMinute;
+                Logger.WriteLog($"Instance_Thread[{instanceId}]", $"Filling in engine data");
 
                 EngineName = ESRecord.ESRecord_Engine_GetName(instanceId);
                 EngineRedline = ESRecord.ESRecord_Engine_GetRedline(instanceId);
@@ -681,6 +734,7 @@ namespace ESRecorder
             else if (instanceDemands[instanceId] == Demand.Exit) return;
 
         //loop:
+            //Logger.WriteLog($"Instance_Thread[{instanceId}]", $"Idle...");
             while (instanceDemands[instanceId] == Demand.None)
             {
                 Thread.Sleep(10);
@@ -688,6 +742,7 @@ namespace ESRecorder
 
             if (Running) goto check_demands;
 
+            Logger.WriteLog($"Instance_Thread[{instanceId}]", $"Instance finished execution.");
             Debug.WriteLine($"{instanceId} Exited!");
         }
 
@@ -703,11 +758,14 @@ namespace ESRecorder
 
             Thread t = new(() =>
             {
+                Logger.WriteLog("Load_Engine", $"Telling 0...{MaxInstances-1} instances to load...");
+                
                 for (int i = 0; i < MaxInstances; i++)
                     instanceDemands[i] = Demand.Load; // slavery :sob:
 
                 Thread.Sleep(100);
 
+                Logger.WriteLog("Load_Engine", $"Waiting for instances...");
                 for (int i = 0; i < MaxInstances; i++)
                 {
                     while (instanceStatus[i] == Status.GimmeAMinute)
@@ -715,7 +773,7 @@ namespace ESRecorder
 
                     if (instanceStatus[i] == Status.Error)
                     {
-                        string errorLog = File.ReadAllText("error_log.log");
+                        string errorLog = File.ReadAllText($"es/error_log{i}.log");
                         Application.Current.Dispatcher.Invoke(() =>
                         {
                             AddLog(" ERROR");
@@ -724,6 +782,7 @@ namespace ESRecorder
                             this.TitlebarContext.Content = "Failed to load engine";
                         });
 
+                        Logger.WriteLog("Load_Engine", $"Whoops, instance {i} had an error.");
                         MessageBox.Show("Failed to load engine.\nError log:\n" + errorLog, "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
 
                         return;
@@ -746,6 +805,7 @@ namespace ESRecorder
                     this.InfoEngineName.Text = EngineName;
                     this.InfoEngineDisplacement.Text = Math.Round(EngineDisplacement, 1).ToString(provider: NUM_INFO) + "L";
                     this.TitlebarContext.Content = "Loaded: " + EngineName;
+                    Logger.WriteLog("Load_Engine", $"OK");
                     AddLog(" OK");
                 });
             });
@@ -791,6 +851,8 @@ namespace ESRecorder
         {
             // Start recording
             AddLog("\nStarting recording...");
+            Logger.WriteLog("Start_Recording", $"Preparing to record...");
+
             string sanitizedName = Sanitize_Path(EngineName);
 
             if (!Directory.Exists("./engines/"))
@@ -803,6 +865,7 @@ namespace ESRecorder
             bool success = int.TryParse(SampleLength.Text, out sampleLength);
             if (!success)
             {
+                Logger.WriteLog("Start_Recording", $"Failed to parse SampleLength.Text (\"{SampleLength.Text}\") as integer.");
                 MessageBox.Show("Failed to parse \"" + SampleLength.Text + "\" as integer", "Error");
                 return;
             }
@@ -810,14 +873,25 @@ namespace ESRecorder
             success = int.TryParse(WarmupCount.Text, out int prerun);
             if (!success)
             {
+                Logger.WriteLog("Start_Recording", $"Failed to parse WarmupCount.Text (\"{WarmupCount.Text}\") as integer.");
                 MessageBox.Show("Failed to parse \"" + WarmupCount.Text + "\" as integer", "Error");
                 return;
             }
 
+            Logger.WriteLog("Start_Recording", $"Preparing RAM dyno.");
+            
             // clear dyno
             Dyno.Clear();
             foreach (var sample in SampleThrottleList)
+            {
+                if(Dyno.ContainsKey(sample.Throttle))
+                {
+                    MessageBox.Show("Your throttle list contains duplicate values.", "Error");
+                    return;
+                }
+
                 Dyno.Add(sample.Throttle, new SortedDictionary<int, KeyValuePair<float, float>>());
+            }
 
             Refresh_Dyno();
 
@@ -825,6 +899,8 @@ namespace ESRecorder
             {
                 Stopwatch sw = new();
                 sw.Start();
+
+                Logger.WriteLog("Start_Recording", $"Splitting data between instances...");
 
                 List<List<SampleConfig>> instances = new();
                 for (int i = 0; i < MaxInstances; i++)
@@ -862,6 +938,8 @@ namespace ESRecorder
                     }
                 }
                 
+                Logger.WriteLog("Start_Recording", $"Launching {MaxInstances} instances of RecordingWorker...");
+                
                 Thread[] threads = new Thread[MaxInstances];
                 for(int i = 0; i < MaxInstances; i++)
                 {
@@ -878,6 +956,8 @@ namespace ESRecorder
 
                 if (!recording)
                 {
+                    Logger.WriteLog("Start_Recording", $"Recording aborted.");
+
                     Application.Current.Dispatcher.Invoke(() =>
                     {
                         AddLog("\nAborted.");
@@ -888,6 +968,9 @@ namespace ESRecorder
                     return;
                 }
 
+                Logger.WriteLog("Start_Recording", $"Recording complete.");
+
+                Logger.WriteLog("Start_Recording", $"Writing disk dyno...");
                 var f = File.CreateText("./engines/" + sanitizedName + ".csv");
                 f.WriteLine("rpm,throttle,power_hp,torque_nm");
 
@@ -900,6 +983,7 @@ namespace ESRecorder
                         
                         if (!Dyno[throttle].Keys.Contains(rpm))
                         {
+                            Logger.WriteLog("Start_Recording", $"One sample is missng! Missing sample is {rpm}/{throttle}.");
                             MessageBox.Show($"The program missed one sample. Sample: {rpm}/{throttle}");
                             continue;
                         }
@@ -913,6 +997,7 @@ namespace ESRecorder
                 f.Flush();
                 f.Close();
 
+                Logger.WriteLog("Start_Recording", $"Writing engine file.");
                 BinaryWriter bw = new(File.OpenWrite("./engines/" + sanitizedName + ".engine"));
 
                 bw.Write(Encoding.ASCII.GetBytes("esreng")); // header
@@ -933,6 +1018,8 @@ namespace ESRecorder
                 sw.Stop();
 
                 recording = false;
+                Logger.WriteLog("Start_Recording", $"Finished! Took {sw.ElapsedMilliseconds}ms.");
+
                 Application.Current.Dispatcher.Invoke(() =>
                 {
                     StartRecordingButton.Content = "Start Recording";
@@ -1285,10 +1372,13 @@ namespace ESRecorder
             if (!File.Exists("persistence.esrf"))
                 return;
 
+            Logger.WriteLog("Load_Persistence", $"Loading persistence data...");
+
             BinaryReader br = new(File.OpenRead("persistence.esrf"));
             string s = new(br.ReadChars(4)); // "magic number"
             if (s != "ESRF")
             {
+                Logger.WriteLog("Load_Persistence", $"Invalid magic number, recieved \"{s}\" instead of \"ESRF\"");
                 MessageBox.Show("Invalid persistence file", "Error");
                 return;
             }
@@ -1298,6 +1388,7 @@ namespace ESRecorder
                 s = new(br.ReadChars(4)); // ESRP
                 if(s != "ESRP")
                 {
+                    Logger.WriteLog("Load_Persistence", $"Invalid header name, recieved \"{s}\" instead of \"ESRP\"");
                     MessageBox.Show("Invalid persistence file", "Error");
                     return;
                 }
@@ -1311,6 +1402,7 @@ namespace ESRecorder
                 s = new(br.ReadChars(4)); // ESRD
                 if (s != "ESRD")
                 {
+                    Logger.WriteLog("Load_Persistence", $"Invalid header name, recieved \"{s}\" instead of \"ESRD\"");
                     MessageBox.Show("Invalid persistence file", "Error");
                     return;
                 }
@@ -1335,6 +1427,7 @@ namespace ESRecorder
                 s = new(br.ReadChars(4)); // ESRC
                 if (s != "ESRC")
                 {
+                    Logger.WriteLog("Load_Persistence", $"Invalid header name, recieved \"{s}\" instead of \"ESRC\"");
                     MessageBox.Show("Invalid persistence file", "Error");
                     return;
                 }
@@ -1352,6 +1445,7 @@ namespace ESRecorder
             }
 
             br.Close();
+            Logger.WriteLog("Load_Persistence", $"Loaded");
         }
 
         void Save_Persistence()
@@ -1364,7 +1458,8 @@ namespace ESRecorder
 
             BinaryWriter bw;
 
-            if(File.Exists("persistence.esrf"))
+            Logger.WriteLog("Save_Persistence", $"Saving persistence data...");
+            if (File.Exists("persistence.esrf"))
                 bw = new(File.Open("persistence.esrf", FileMode.Truncate, FileAccess.Write));
             else
                 bw = new(File.Open("persistence.esrf", FileMode.CreateNew, FileAccess.Write));
@@ -1430,6 +1525,7 @@ namespace ESRecorder
 
             bw.Flush();
             bw.Close();
+            Logger.WriteLog("Save_Persistence", $"Saved");
         }
 
         #endregion
@@ -1445,6 +1541,8 @@ namespace ESRecorder
         private void X_Button_Click(object sender, RoutedEventArgs e)
         {
             // cleanup etc
+            Logger.WriteLog("X_Button_Click", $"Window is closing.");
+
             Running = false;
             recording = false;
 

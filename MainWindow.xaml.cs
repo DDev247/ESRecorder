@@ -152,29 +152,52 @@ namespace ESRecorder
             Thread t = new(async () =>
             {
                 HttpClient c = new();
+                HttpResponseMessage message;
                 c.Timeout = TimeSpan.FromSeconds(10);
 
                 // try five times
+                bool success = false;
+                Exception? ex = null;
                 for (int _ = 0; _ < 5; _++)
                 {
-                    HttpResponseMessage message = await c.GetAsync("https://raw.githubusercontent.com/DDev247/ESRecorder/refs/heads/main/version");
-                    if (!message.IsSuccessStatusCode)
+                    try
                     {
-                        MessageBoxResult res = MessageBox.Show($"Failed to check for new version. Press yes to try again.", "Warning", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-                        if (res != MessageBoxResult.Yes)
-                            break;
+                        message = await c.GetAsync("https://raw.githubusercontent.com/DDev247/ESRecorder/refs/heads/main/version");
+                    }
+                    catch (Exception e)
+                    {
+                        ex = e;
+                        Thread.Sleep(5000);
+                        continue;
                     }
 
+                    if (!message.IsSuccessStatusCode)
+                    {
+                        Thread.Sleep(5000);
+                        continue;
+                    }
+
+                    success = true;
                     string s = await message.Content.ReadAsStringAsync();
                     if (s != VERSION)
                     {
                         MessageBoxResult res = MessageBox.Show($"There's a new version available: \"{s}\". Press yes to go to the latest release page.", "New version available", MessageBoxButton.YesNo, MessageBoxImage.Information);
                         if (res == MessageBoxResult.Yes)
                             Process.Start("start", "https://github.com/DDev247/ESRecorder/releases/latest");
+
+                        TitlebarNameVersion.Foreground = new SolidColorBrush(Color.FromRgb(0xFD, 0xBD, 0x2E));
                         break;
                     }
                     else // up to date?
                         break;
+                }
+
+                if (!success)
+                {
+                    if(ex != null)
+                        MessageBox.Show($"Failed to check for new version.\nException caught:\n{ex.Message}", "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    else
+                        MessageBox.Show($"Failed to check for new version.", "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
             });
             t.Start();
